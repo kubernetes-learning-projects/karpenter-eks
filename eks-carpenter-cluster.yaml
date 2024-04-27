@@ -1,9 +1,3 @@
-# karpenter-eks
- Testing the cluster autoscaling with the karpenter
-
-
- ```
- eksctl create cluster -f - <<EOF
 ---
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
@@ -47,5 +41,3 @@ managedNodeGroups:
 
 addons:
 - name: eks-pod-identity-agent
-EOF
- ```
