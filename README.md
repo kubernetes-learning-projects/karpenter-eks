@@ -3,7 +3,7 @@
 
 
  ```
- eksctl create cluster -f - <<EOF
+eksctl delete cluster -f - <<EOF
 ---
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
@@ -53,7 +53,7 @@ EOF
 ### NodePool and EC2NodeClass Custom Resource Manifest
 
 ```
-cat <<EOF | envsubst | kubectl apply -f -
+cat <<EOF | envsubst | kubectl delete -f -
 apiVersion: karpenter.sh/v1beta1
 kind: NodePool
 metadata:
@@ -70,7 +70,7 @@ spec:
           values: ["linux"]
         - key: karpenter.sh/capacity-type
           operator: In
-          values: ["spot"]
+          values: ["on-demand"]
         - key: karpenter.k8s.aws/instance-category
           operator: In
           values: ["c", "m", "r"]
