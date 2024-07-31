@@ -3,7 +3,7 @@
 
 
  ```
-eksctl delete cluster -f - <<EOF
+eksctl create cluster -f - <<EOF
 ---
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
@@ -17,9 +17,9 @@ metadata:
 vpc:
   subnets:
     public:
-      us-west-2a: { id: subnet-094d01de2dd2148c0 }
-      us-west-2b: { id: subnet-04429e132a1f42826 }
-      us-west-2c: { id: subnet-028a738bdafc344c6 }
+      us-west-2a: { id: subnet-0432cb02558cfcf7f }
+      us-west-2b: { id: subnet-02ffe5c35f8b088b1 }
+      us-west-2c: { id: subnet-0c424ee28097003e9 }
 
 iam:
   withOIDC: true
@@ -49,11 +49,26 @@ addons:
 - name: eks-pod-identity-agent
 EOF
  ```
+# Install Karpenter
+```
+helm registry logout public.ecr.aws
+docker logout public.ecr.aws
+```
+```
+helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter --version "${KARPENTER_VERSION}" --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
+  --set "settings.clusterName=${CLUSTER_NAME}" \
+  --set "settings.interruptionQueue=${CLUSTER_NAME}" \
+  --set controller.resources.requests.cpu=1 \
+  --set controller.resources.requests.memory=1Gi \
+  --set controller.resources.limits.cpu=1 \
+  --set controller.resources.limits.memory=1Gi \
+  --wait
+```
 
 ### NodePool and EC2NodeClass Custom Resource Manifest
 
 ```
-cat <<EOF | envsubst | kubectl delete -f -
+cat <<EOF | envsubst | kubectl create -f -
 apiVersion: karpenter.sh/v1beta1
 kind: NodePool
 metadata:
@@ -64,19 +79,16 @@ spec:
       requirements:
         - key: kubernetes.io/arch
           operator: In
-          values: ["amd64"]
+          values: ["arm64"]
         - key: kubernetes.io/os
           operator: In
           values: ["linux"]
         - key: karpenter.sh/capacity-type
           operator: In
-          values: ["on-demand"]
+          values: ["spot"]
         - key: karpenter.k8s.aws/instance-category
           operator: In
-          values: ["c", "m", "r"]
-        - key: karpenter.k8s.aws/instance-generation
-          operator: Gt
-          values: ["2"]
+          values: ["c", "m", "t"]
       nodeClassRef:
         apiVersion: karpenter.k8s.aws/v1beta1
         kind: EC2NodeClass
@@ -85,7 +97,6 @@ spec:
     cpu: 1000
   disruption:
     consolidationPolicy: WhenUnderutilized
-    expireAfter: 720h 
 ---
 apiVersion: karpenter.k8s.aws/v1beta1
 kind: EC2NodeClass
@@ -97,11 +108,40 @@ spec:
   subnetSelectorTerms:
     - tags:
         karpenter.sh/discovery: "${CLUSTER_NAME}" 
+    - id: subnet-0432cb02558cfcf7f
+    - id: subnet-02ffe5c35f8b088b1
   securityGroupSelectorTerms:
     - tags:
-        karpenter.sh/discovery: "${CLUSTER_NAME}" 
+        karpenter.sh/discovery: "${CLUSTER_NAME}"
   amiSelectorTerms:
     - id: "${ARM_AMI_ID}"
     - id: "${AMD_AMI_ID}"
 EOF
 ```
+## Testing
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inflate-1
+spec:
+  replicas: 100
+  selector:
+    matchLabels:
+      app: inflate
+  template:
+    metadata:
+      labels:
+        app: inflate
+    spec:
+      terminationGracePeriodSeconds: 0
+      containers:
+        - name: inflate
+          image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
+          resources:
+            requests:
+              cpu: 1
+EOF
+```
+
